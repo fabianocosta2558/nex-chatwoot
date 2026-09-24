@@ -156,6 +156,7 @@ Rails.application.routes.draw do
             end
           end
           resources :dashboard_apps, only: [:index, :show, :create, :update, :destroy]
+          resource :nex_technical_queue, only: [:show]
           namespace :channels do
             resource :twilio_channel, only: [:create]
           end

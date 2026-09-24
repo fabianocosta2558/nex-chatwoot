@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fila Técnica</title>
+  <style>
+    :root { color-scheme: light dark; font-family: Inter, system-ui, sans-serif; }
+    body { margin: 0; padding: 16px; background: #f8fafc; color: #172033; }
+    .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; box-shadow: 0 1px 2px #0f172a0d; }
+    h1 { margin: 0 0 4px; font-size: 16px; } p, small { color: #64748b; } .grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:14px 0; }
+    .field { background:#f8fafc; border-radius:8px; padding:9px; } .field small { display:block; font-size:10px; text-transform:uppercase; } .field b { font-size:13px; }
+    .offer { border-top:1px solid #e2e8f0; padding:10px 0; } .offer:last-child { padding-bottom:0; }
+    button, a { display:block; width:100%; box-sizing:border-box; border:0; border-radius:8px; padding:10px; margin-top:10px; font-weight:700; text-align:center; text-decoration:none; cursor:pointer; }
+    .primary { background:#16a34a; color:#fff; } .secondary { background:#e2e8f0; color:#172033; } .empty { margin-top:16px; text-align:center; color:#64748b; }
+  </style>
+</head>
+<body>
+  <div class="card" id="app"><h1>Fila Técnica</h1><p>Abra uma conversa para consultar o cliente.</p></div>
+  <script>
+    const app = document.getElementById('app');
+    const money = value => value == null ? '—' : Number(value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    const escape = value => String(value ?? '—').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
+    function render(item) {
+      const offers = item.offers.length ? item.offers.map(offer => `<div class="offer"><b>${escape(offer.product)} · ${escape(offer.bank)}</b><div class="grid"><div class="field"><small>Parcela</small><b>${money(offer.installment)}</b></div><div class="field"><small>Prazo</small><b>${escape(offer.term)}x</b></div><div class="field"><small>Valor liberado</small><b>${money(offer.released_value)}</b></div><div class="field"><small>Saldo devedor</small><b>${money(offer.debt_balance)}</b></div></div></div>`).join('') : '<div class="empty">Sem proposta disponível.</div>';
+      app.innerHTML = `<h1>${escape(item.name)}</h1><p>${escape(item.cpf)} · ${escape(item.state)}</p><div class="grid"><div class="field"><small>Telefone</small><b>${escape(item.phone)}</b></div><div class="field"><small>Propostas</small><b>${item.offers.length}</b></div></div>${offers}${item.link_url ? `<a class="primary" href="${encodeURI(item.link_url)}" target="_blank" rel="noopener">Abrir jornada de autocontratação</a>` : ''}<a class="secondary" href="${encodeURI(item.operational_url)}" target="_blank" rel="noopener">Abrir cliente no CRM</a>`;
+    }
+    async function load(context) {
+      const phone = context?.contact?.phone_number;
+      const accountId = context?.conversation?.account_id;
+      if (!phone || !accountId) { app.innerHTML = '<h1>Fila Técnica</h1><p class="empty">Este contato não possui telefone vinculado.</p>'; return; }
+      app.innerHTML = '<h1>Fila Técnica</h1><p>Consultando dados do cliente…</p>';
+      const response = await fetch(`/api/v1/accounts/${accountId}/nex_technical_queue?phone=${encodeURIComponent(phone)}`, { credentials: 'same-origin' });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Não foi possível consultar a fila técnica.');
+      if (!data.found) { app.innerHTML = '<h1>Fila Técnica</h1><p class="empty">Cliente ainda não encontrado na fila técnica.</p>'; return; }
+      render(data.item);
+    }
+    window.addEventListener('message', event => {
+      if (event.origin !== window.location.origin) return;
+      let message; try { message = typeof event.data === 'string' ? JSON.parse(event.data) : event.data; } catch (_) { return; }
+      if (message?.event === 'appContext') load(message.data).catch(error => { app.innerHTML = `<h1>Fila Técnica</h1><p class="empty">${escape(error.message)}</p>`; });
+    });
+    window.parent.postMessage('chatwoot-dashboard-app:fetch-info', window.location.origin);
+  </script>
+</body>
+</html>
