@@ -27,6 +27,15 @@ class Api::V1::Accounts::CampaignsController < Api::V1::Accounts::BaseController
     head :ok
   end
 
+  # A distributed WhatsApp campaign keeps its delivery history. Cancelling it
+  # stops only the recipients that have not yet been delivered.
+  def cancel
+    return render json: { error: 'Only WhatsApp campaigns can be cancelled this way' }, status: :unprocessable_entity unless @campaign.whatsapp?
+
+    @campaign.cancel_delivery!
+    render :show
+  end
+
   private
 
   def campaign
@@ -34,7 +43,11 @@ class Api::V1::Accounts::CampaignsController < Api::V1::Accounts::BaseController
   end
 
   def campaign_params
-    params.require(:campaign).permit(:title, :description, :message, :enabled, :trigger_only_during_business_hours, :inbox_id, :sender_id,
-                                     :scheduled_at, audience: [:type, :id], trigger_rules: {}, template_params: {})
+    params.require(:campaign).permit(
+      :title, :description, :message, :enabled, :trigger_only_during_business_hours, :inbox_id, :sender_id, :scheduled_at,
+      audience: [:type, :id],
+      trigger_rules: { delivery_settings: [:mode, :daily_limit, :window_start, :window_end, :time_zone] },
+      template_params: {}
+    )
   end
 end

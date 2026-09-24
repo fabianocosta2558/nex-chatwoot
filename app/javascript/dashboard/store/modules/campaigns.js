@@ -104,6 +104,15 @@ export const actions = {
       commit(types.SET_CAMPAIGN_UI_FLAG, { isDeleting: false });
     }
   },
+  cancel: async ({ commit }, id) => {
+    commit(types.SET_CAMPAIGN_UI_FLAG, { isUpdating: true });
+    try {
+      const response = await CampaignsAPI.cancel(id);
+      commit(types.EDIT_CAMPAIGN, response.data);
+    } finally {
+      commit(types.SET_CAMPAIGN_UI_FLAG, { isUpdating: false });
+    }
+  },
 };
 
 export const mutations = {

@@ -50,6 +50,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  deliverySummary: {
+    type: Object,
+    default: null,
+  },
 });
 
 const emit = defineEmits(['edit', 'delete', 'analytics']);
@@ -92,6 +96,10 @@ const campaignStatus = computed(() => {
 
   if (props.status === STATUS_PROCESSING) {
     return t('CAMPAIGN.SMS.CARD.STATUS.PROCESSING');
+  }
+
+  if (props.status === 'canceled') {
+    return 'Cancelada';
   }
 
   return t('CAMPAIGN.SMS.CARD.STATUS.SCHEDULED');
@@ -143,6 +151,9 @@ const inboxIcon = computed(() => {
           :scheduled-at="scheduledAt"
         />
       </div>
+      <p v-if="deliverySummary" class="text-xs text-n-slate-10">
+        Pendentes: {{ deliverySummary.pending }} · Enviados: {{ deliverySummary.sent }} · Falhos: {{ deliverySummary.failed }} · Pulados: {{ deliverySummary.skipped }}
+      </p>
     </div>
     <div class="flex items-center justify-end w-20 gap-2">
       <Button

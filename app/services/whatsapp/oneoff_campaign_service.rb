@@ -3,6 +3,8 @@ class Whatsapp::OneoffCampaignService
 
   def perform
     validate_campaign!
+    return schedule_distributed_audience if campaign.distributed_whatsapp_delivery?
+
     process_audience(extract_audience_labels)
     campaign.completed!
   end
@@ -21,7 +23,7 @@ class Whatsapp::OneoffCampaignService
   end
 
   def validate_campaign_status!
-    raise 'Completed Campaign' if campaign.completed?
+    raise 'Completed Campaign' if campaign.completed? || campaign.canceled?
   end
 
   def validate_provider!
@@ -44,41 +46,62 @@ class Whatsapp::OneoffCampaignService
     campaign.account.labels.where(id: audience_label_ids).pluck(:title)
   end
 
+  # The legacy mode intentionally keeps Chatwoot's original behaviour.
+  def process_audience(audience_labels)
+    contacts = campaign.account.contacts.tagged_with(audience_labels, any: true)
+    Rails.logger.info "Processing #{contacts.count} contacts for campaign #{campaign.id}"
+    contacts.each { |contact| process_contact(contact) }
+    Rails.logger.info "Campaign #{campaign.id} processing completed"
+  end
+
+  # Distributed mode materializes the audience once, then schedules one idempotent
+  # job per contact. Labels changing mid-campaign cannot change the recipient list.
+  def schedule_distributed_audience
+    contacts = campaign.account.contacts.tagged_with(extract_audience_labels, any: true).distinct.order(:id).to_a
+    recipients = contacts.map { |contact| build_recipient(contact) }
+    scheduler = Whatsapp::CampaignDeliveryScheduleService.new(campaign: campaign, recipients: recipients)
+
+    recipients.each_with_index do |recipient, index|
+      next unless recipient.pending?
+
+      scheduled_at = scheduler.at(index)
+      recipient.update!(status: :scheduled, scheduled_at: scheduled_at, message_content: campaign.message)
+      Campaigns::SendWhatsappCampaignRecipientJob.set(wait_until: scheduled_at).perform_later(recipient.id)
+    end
+
+    Rails.logger.info "Scheduled #{recipients.count} WhatsApp campaign recipients for campaign #{campaign.id}"
+    campaign.complete_delivery_if_finished! if recipients.empty?
+  end
+
+  def build_recipient(contact)
+    CampaignRecipient.find_or_create_by!(campaign: campaign, contact: contact) do |recipient|
+      recipient.account = campaign.account
+      recipient.inbox = inbox
+    end
+  end
+
+  # Kept for the original immediate campaign mode and its existing callers/tests.
   def process_contact(contact)
     Rails.logger.info "Processing contact: #{contact.name} (#{contact.phone_number})"
-
     recipient, recipient_error = campaign_destination(contact)
     if recipient.blank?
       Rails.logger.warn "Skipping campaign recipient contact_id=#{contact.id}: #{recipient_error}"
       return
     end
-
     if campaign.template_params.blank?
       Rails.logger.error "Skipping contact #{contact.name} - no template_params found for WhatsApp campaign"
       return
     end
-
     processed_template_params = process_liquid_template_params(contact)
     return if processed_template_params.nil?
 
     send_whatsapp_template_message(to: recipient, template_params: processed_template_params)
   end
 
-  def process_audience(audience_labels)
-    contacts = campaign.account.contacts.tagged_with(audience_labels, any: true)
-    Rails.logger.info "Processing #{contacts.count} contacts for campaign #{campaign.id}"
-
-    contacts.each { |contact| process_contact(contact) }
-
-    Rails.logger.info "Campaign #{campaign.id} processing completed"
-  end
-
   def process_liquid_template_params(contact)
     liquid_processor = Whatsapp::LiquidTemplateProcessorService.new(campaign: campaign, contact: contact)
     processed_template_params = liquid_processor.process_template_params(campaign.template_params)
-
     Rails.logger.info "Skipping contact #{contact.name} - liquid variables resolved to blank values" if processed_template_params.nil?
-
     processed_template_params
   rescue StandardError => e
     Rails.logger.error "Failed to process liquid template params for contact #{contact.name}: #{e.message}"
@@ -88,26 +111,14 @@ class Whatsapp::OneoffCampaignService
   def send_whatsapp_template_message(to:, template_params:)
     return if authentication_template_blocked?(to, template_params)
 
-    processor = Whatsapp::TemplateProcessorService.new(
-      channel: channel,
-      template_params: template_params
-    )
-
+    processor = Whatsapp::TemplateProcessorService.new(channel: channel, template_params: template_params)
     name, namespace, lang_code, processed_parameters = processor.call
-
     return if name.blank?
 
-    channel.send_template(to, {
-                            name: name,
-                            namespace: namespace,
-                            lang_code: lang_code,
-                            parameters: processed_parameters
-                          }, nil)
-
+    channel.send_template(to, { name: name, namespace: namespace, lang_code: lang_code, parameters: processed_parameters }, nil)
   rescue StandardError => e
     Rails.logger.error "Failed to send WhatsApp template message to #{to}: #{e.message}"
     Rails.logger.error "Backtrace: #{e.backtrace.first(5).join('\n')}"
-    # continue processing remaining contacts
     nil
   end
 
@@ -122,23 +133,13 @@ class Whatsapp::OneoffCampaignService
   def campaign_destination(contact)
     return [contact.phone_number, nil] if contact.phone_number.present?
 
-    bsuid_contact_inboxes = bsuid_contact_inboxes_for(contact)
-    return [nil, 'Phone number and BSUID are missing'] if bsuid_contact_inboxes.empty?
-
-    bsuid_recipient = preferred_bsuid_recipient(bsuid_contact_inboxes)
-    return [bsuid_recipient, nil] if bsuid_recipient.present?
-
-    [nil, 'Multiple WhatsApp identities found; refusing to choose a destination']
-  end
-
-  def bsuid_contact_inboxes_for(contact)
-    contact.contact_inboxes.where(inbox_id: inbox.id).select do |contact_inbox|
+    identities = contact.contact_inboxes.where(inbox_id: inbox.id).select do |contact_inbox|
       bsuid_source_id?(contact_inbox.source_id)
     end
-  end
+    return [nil, 'Phone number and BSUID are missing'] if identities.empty?
+    return [identities.first.source_id, nil] if identities.one?
 
-  def preferred_bsuid_recipient(contact_inboxes)
-    return contact_inboxes.first.source_id if contact_inboxes.one?
+    [nil, 'Multiple WhatsApp identities found; refusing to choose a destination']
   end
 
   def bsuid_source_id?(source_id)

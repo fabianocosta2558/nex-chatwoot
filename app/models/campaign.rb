@@ -49,9 +49,10 @@ class Campaign < ApplicationRecord
 
   enum campaign_type: { ongoing: 0, one_off: 1 }
   # TODO : enabled attribute is unneccessary . lets move that to the campaign status with additional statuses like draft, disabled etc.
-  enum campaign_status: { active: 0, completed: 1, processing: 2 }
+  enum campaign_status: { active: 0, completed: 1, processing: 2, canceled: 3 }
 
   has_many :conversations, dependent: :nullify, autosave: true
+  has_many :campaign_recipients, dependent: :destroy
 
   before_validation :ensure_correct_campaign_attributes
   before_update :set_completed_at, if: :marking_completed?
@@ -64,6 +65,34 @@ class Campaign < ApplicationRecord
     return unless mark_processing!
 
     execute_campaign
+  end
+
+  def whatsapp?
+    inbox.inbox_type == 'Whatsapp'
+  end
+
+  def distributed_whatsapp_delivery?
+    whatsapp? && trigger_rules.dig('delivery_settings', 'mode') == 'distributed'
+  end
+
+  def delivery_settings
+    trigger_rules.fetch('delivery_settings', {})
+  end
+
+  def cancel_delivery!
+    with_lock do
+      return if completed? || canceled?
+
+      update!(campaign_status: :canceled, completed_at: Time.current)
+      campaign_recipients.where(status: %i[pending scheduled]).update_all(status: CampaignRecipient.statuses[:canceled], canceled_at: Time.current)
+    end
+  end
+
+  def complete_delivery_if_finished!
+    return unless processing?
+    return if campaign_recipients.where(status: %i[pending scheduled sending]).exists?
+
+    completed!
   end
 
   private

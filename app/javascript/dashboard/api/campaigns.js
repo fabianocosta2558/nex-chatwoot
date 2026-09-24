@@ -16,6 +16,10 @@ class CampaignsAPI extends ApiClient {
       params: { status, page },
     });
   }
+
+  cancel(id) {
+    return axios.post(`${this.url}/${id}/cancel`);
+  }
 }
 
 export default new CampaignsAPI();

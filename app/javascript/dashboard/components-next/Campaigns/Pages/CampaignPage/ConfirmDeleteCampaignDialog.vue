@@ -13,6 +13,10 @@ const props = defineProps({
   },
 });
 
+const isDistributedCampaign = () =>
+  props.selectedCampaign?.campaign_status === 'processing' &&
+  props.selectedCampaign?.trigger_rules?.delivery_settings?.mode === 'distributed';
+
 const { t } = useI18n();
 const store = useStore();
 
@@ -22,8 +26,13 @@ const deleteCampaign = async id => {
   if (!id) return;
 
   try {
-    await store.dispatch('campaigns/delete', id);
-    useAlert(t('CAMPAIGN.CONFIRM_DELETE.API.SUCCESS_MESSAGE'));
+    if (isDistributedCampaign()) {
+      await store.dispatch('campaigns/cancel', id);
+      useAlert('Campanha cancelada. Os envios pendentes foram interrompidos.');
+    } else {
+      await store.dispatch('campaigns/delete', id);
+      useAlert(t('CAMPAIGN.CONFIRM_DELETE.API.SUCCESS_MESSAGE'));
+    }
   } catch (error) {
     useAlert(t('CAMPAIGN.CONFIRM_DELETE.API.ERROR_MESSAGE'));
   }
@@ -41,9 +50,9 @@ defineExpose({ dialogRef });
   <Dialog
     ref="dialogRef"
     type="alert"
-    :title="t('CAMPAIGN.CONFIRM_DELETE.TITLE')"
-    :description="t('CAMPAIGN.CONFIRM_DELETE.DESCRIPTION')"
-    :confirm-button-label="t('CAMPAIGN.CONFIRM_DELETE.CONFIRM')"
+    :title="isDistributedCampaign() ? 'Cancelar campanha' : t('CAMPAIGN.CONFIRM_DELETE.TITLE')"
+    :description="isDistributedCampaign() ? 'Os envios que ainda não ocorreram serão interrompidos. O histórico será mantido.' : t('CAMPAIGN.CONFIRM_DELETE.DESCRIPTION')"
+    :confirm-button-label="isDistributedCampaign() ? 'Cancelar envios' : t('CAMPAIGN.CONFIRM_DELETE.CONFIRM')"
     @confirm="handleDialogConfirm"
   />
 </template>

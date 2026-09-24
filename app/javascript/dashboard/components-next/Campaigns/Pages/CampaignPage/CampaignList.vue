@@ -39,6 +39,7 @@ const handleAnalytics = campaign => emit('analytics', campaign);
       :sender="campaign.sender"
       :inbox="campaign.inbox"
       :scheduled-at="campaign.scheduled_at"
+      :delivery-summary="campaign.delivery_summary"
       :is-live-chat-type="isLiveChatType"
       :show-edit="showEdit"
       :show-analytics="

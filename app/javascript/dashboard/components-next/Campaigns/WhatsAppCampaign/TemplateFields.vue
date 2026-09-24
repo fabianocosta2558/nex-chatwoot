@@ -36,6 +36,20 @@ const processedParams = defineModel('processedParams', {
 
 const { t } = useI18n();
 
+const quickVariables = [
+  { label: 'Primeiro nome', value: '{{contact.first_name}}' },
+  { label: 'Nome completo', value: '{{contact.name}}' },
+  { label: 'Telefone', value: '{{contact.phone_number}}' },
+  {
+    label: 'Valor liberado',
+    value: '{{contact.custom_attribute.valor_liberado_total}}',
+  },
+  {
+    label: 'Link individual',
+    value: '{{contact.custom_attribute.link_individual}}',
+  },
+];
+
 const templateOptions = computed(() =>
   props.templates.map(template => ({
     value: getTemplateKey(template),
@@ -93,6 +107,16 @@ const updateHeaderParam = (key, value) => {
     ...processedParams.value.header,
     [key]: value,
   };
+};
+
+const appendVariable = (section, key, value) => {
+  if (section === 'button') {
+    const current = processedParams.value.buttons[key]?.parameter || '';
+    processedParams.value.buttons[key].parameter = `${current}${value}`;
+    return;
+  }
+  const current = processedParams.value[section]?.[key] || '';
+  processedParams.value[section][key] = `${current}${value}`;
 };
 </script>
 
@@ -152,47 +176,62 @@ const updateHeaderParam = (key, value) => {
     <label class="mb-0.5 text-heading-3 text-n-slate-12">
       {{ t('CAMPAIGN.WHATSAPP.FORM.TEMPLATE.HEADER_LABEL') }}
     </label>
-    <Input
-      v-for="(value, key) in processedParams.header"
-      :key="`header-${key}`"
-      v-model="processedParams.header[key]"
-      :placeholder="
-        t('CAMPAIGN.WHATSAPP.FORM.TEMPLATE.VARIABLE_PLACEHOLDER', {
-          variable: key,
-        })
-      "
-    />
+    <div v-for="(value, key) in processedParams.header" :key="`header-${key}`">
+      <Input
+        v-model="processedParams.header[key]"
+        :placeholder="t('CAMPAIGN.WHATSAPP.FORM.TEMPLATE.VARIABLE_PLACEHOLDER', { variable: key })"
+      />
+      <div class="flex flex-wrap gap-1 pt-1">
+        <button
+          v-for="variable in quickVariables"
+          :key="`header-${key}-${variable.value}`"
+          type="button"
+          class="px-2 py-1 text-xs rounded border border-n-slate-5 text-n-slate-11 hover:bg-n-alpha-2"
+          @click="appendVariable('header', key, variable.value)"
+        >{{ variable.label }}</button>
+      </div>
+    </div>
   </div>
 
   <div v-if="processedParams.body" class="flex flex-col gap-2">
     <label class="mb-0.5 text-heading-3 text-n-slate-12">
       {{ t('CAMPAIGN.WHATSAPP.FORM.TEMPLATE.BODY_LABEL') }}
     </label>
-    <Input
-      v-for="(value, key) in processedParams.body"
-      :key="`body-${key}`"
-      v-model="processedParams.body[key]"
-      :placeholder="
-        t('CAMPAIGN.WHATSAPP.FORM.TEMPLATE.VARIABLE_PLACEHOLDER', {
-          variable: key,
-        })
-      "
-    />
+    <div v-for="(value, key) in processedParams.body" :key="`body-${key}`">
+      <Input
+        v-model="processedParams.body[key]"
+        :placeholder="t('CAMPAIGN.WHATSAPP.FORM.TEMPLATE.VARIABLE_PLACEHOLDER', { variable: key })"
+      />
+      <div class="flex flex-wrap gap-1 pt-1">
+        <button
+          v-for="variable in quickVariables"
+          :key="`body-${key}-${variable.value}`"
+          type="button"
+          class="px-2 py-1 text-xs rounded border border-n-slate-5 text-n-slate-11 hover:bg-n-alpha-2"
+          @click="appendVariable('body', key, variable.value)"
+        >{{ variable.label }}</button>
+      </div>
+    </div>
   </div>
 
   <div v-if="processedParams.buttons" class="flex flex-col gap-2">
     <label class="mb-0.5 text-heading-3 text-n-slate-12">
       {{ t('CAMPAIGN.WHATSAPP.FORM.TEMPLATE.BUTTONS_LABEL') }}
     </label>
-    <Input
-      v-for="index in buttonIndexes"
-      :key="`button-${index}`"
-      v-model="processedParams.buttons[index].parameter"
-      :placeholder="
-        t('CAMPAIGN.WHATSAPP.FORM.TEMPLATE.BUTTON_PLACEHOLDER', {
-          index: index + 1,
-        })
-      "
-    />
+    <div v-for="index in buttonIndexes" :key="`button-${index}`">
+      <Input
+        v-model="processedParams.buttons[index].parameter"
+        :placeholder="t('CAMPAIGN.WHATSAPP.FORM.TEMPLATE.BUTTON_PLACEHOLDER', { index: index + 1 })"
+      />
+      <div class="flex flex-wrap gap-1 pt-1">
+        <button
+          v-for="variable in quickVariables"
+          :key="`button-${index}-${variable.value}`"
+          type="button"
+          class="px-2 py-1 text-xs rounded border border-n-slate-5 text-n-slate-11 hover:bg-n-alpha-2"
+          @click="appendVariable('button', index, variable.value)"
+        >{{ variable.label }}</button>
+      </div>
+    </div>
   </div>
 </template>

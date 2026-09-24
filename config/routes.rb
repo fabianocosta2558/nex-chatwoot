@@ -149,7 +149,8 @@ Rails.application.routes.draw do
               resources :inbox_limits, only: [:create, :update, :destroy]
             end
           end
-          resources :campaigns, only: [:index, :create, :show, :update, :destroy] do
+            resources :campaigns, only: [:index, :create, :show, :update, :destroy] do
+              post :cancel, on: :member
             if ChatwootApp.enterprise?
               get 'analytics/metrics', to: 'campaigns/analytics#metrics'
               get 'analytics/contacts', to: 'campaigns/analytics#contacts'

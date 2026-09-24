@@ -18,6 +18,17 @@ if resource.campaign_type == 'one_off'
   json.started_at resource.started_at&.to_i
   json.completed_at resource.completed_at&.to_i
   json.audience resource.audience
+  if resource.distributed_whatsapp_delivery?
+    counts = resource.campaign_recipients.group(:status).count
+    json.delivery_summary do
+      json.pending (counts['pending'] || 0) + (counts['scheduled'] || 0) + (counts['sending'] || 0)
+      json.sent counts['sent'] || 0
+      json.failed counts['failed'] || 0
+      json.skipped counts['skipped'] || 0
+      json.canceled counts['canceled'] || 0
+      json.next_send_at resource.campaign_recipients.scheduled.where('scheduled_at >= ?', Time.current).minimum(:scheduled_at)&.to_i
+    end
+  end
 end
 json.trigger_rules resource.trigger_rules
 json.trigger_only_during_business_hours resource.trigger_only_during_business_hours

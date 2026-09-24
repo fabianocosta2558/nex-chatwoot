@@ -56,6 +56,13 @@ const buildState = () => ({
   processedParams: {},
   audienceIds: [],
   scheduledAt: '',
+  deliverySettings: {
+    mode: 'distributed',
+    daily_limit: 100,
+    window_start: '08:00',
+    window_end: '18:00',
+    time_zone: 'America/Sao_Paulo',
+  },
 });
 
 const snapshot = value => JSON.parse(JSON.stringify(value));
@@ -111,6 +118,11 @@ const applyCampaign = record => {
       .filter(item => item.type === 'Label')
       .map(item => item.id),
     scheduledAt: toDateTimeInput(record.scheduled_at),
+    deliverySettings: {
+      ...buildState().deliverySettings,
+      ...(record.trigger_rules?.delivery_settings ?? {}),
+      mode: 'distributed',
+    },
   });
   savedState.value = snapshot(state);
 };
@@ -284,7 +296,10 @@ const scheduleButtonLabel = computed(() => {
 });
 
 const isScheduleDirty = computed(
-  () => state.scheduledAt !== savedState.value.scheduledAt
+  () =>
+    state.scheduledAt !== savedState.value.scheduledAt ||
+    JSON.stringify(state.deliverySettings) !==
+      JSON.stringify(savedState.value.deliverySettings)
 );
 
 const isScheduleInPast = computed(
@@ -334,6 +349,7 @@ const handleCreate = async scheduledAt => {
       inbox_id: state.inboxId,
       audience: audiencePayload.value,
       scheduled_at: scheduledAt,
+      trigger_rules: { delivery_settings: state.deliverySettings },
       ...templatePayload.value,
     });
     useTrack(CAMPAIGNS_EVENTS.CREATE_CAMPAIGN, {
@@ -352,12 +368,21 @@ const handleSchedule = () =>
 
 const handleCancelReschedule = () => {
   state.scheduledAt = savedState.value.scheduledAt;
+  state.deliverySettings = snapshot(savedState.value.deliverySettings);
 };
 
 const handleReschedule = async () => {
   const scheduledAt = state.scheduledAt;
-  if (await handleUpdate({ scheduled_at: new Date(scheduledAt).toISOString() }))
-    savedState.value = { ...savedState.value, scheduledAt };
+  if (await handleUpdate({
+    scheduled_at: new Date(scheduledAt).toISOString(),
+    trigger_rules: { delivery_settings: state.deliverySettings },
+  })) {
+    savedState.value = {
+      ...savedState.value,
+      scheduledAt,
+      deliverySettings: snapshot(state.deliverySettings),
+    };
+  }
 };
 </script>
 
@@ -379,6 +404,7 @@ const handleReschedule = async () => {
         </span>
         <SchedulePopover
           v-model="state.scheduledAt"
+          v-model:delivery-settings="state.deliverySettings"
           :button-label="scheduleButtonLabel"
           :confirm-label="t('CAMPAIGN.WHATSAPP.FORM.SCHEDULE_POPOVER.CREATE')"
           :variant="isEditMode ? 'outline' : 'solid'"
