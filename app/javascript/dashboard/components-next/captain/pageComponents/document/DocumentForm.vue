@@ -32,6 +32,8 @@ const initialState = {
   url: '',
   documentType: 'url',
   pdfFile: null,
+  markdownFile: null,
+  markdownContent: '',
 };
 
 const state = reactive({ ...initialState });
@@ -46,11 +48,15 @@ const validationRules = {
   pdfFile: {
     required: requiredIf(() => state.documentType === 'pdf'),
   },
+  markdownFile: {
+    required: requiredIf(() => state.documentType === 'markdown'),
+  },
 };
 
 const documentTypeOptions = [
   { value: 'url', label: t('CAPTAIN.DOCUMENTS.FORM.TYPE.URL') },
   { value: 'pdf', label: t('CAPTAIN.DOCUMENTS.FORM.TYPE.PDF') },
+  { value: 'markdown', label: 'Markdown (.md)' },
 ];
 
 const v$ = useVuelidate(validationRules, state);
@@ -58,6 +64,7 @@ const v$ = useVuelidate(validationRules, state);
 const isLoading = computed(() => formState.uiFlags.value.creatingItem);
 
 const hasPdfFileError = computed(() => v$.value.pdfFile.$error);
+const hasMarkdownFileError = computed(() => v$.value.markdownFile.$error);
 
 const getErrorMessage = (field, errorKey) => {
   return v$.value[field].$error
@@ -68,13 +75,16 @@ const getErrorMessage = (field, errorKey) => {
 const formErrors = computed(() => ({
   url: getErrorMessage('url', 'URL'),
   pdfFile: getErrorMessage('pdfFile', 'PDF_FILE'),
+  markdownFile: getErrorMessage('markdownFile', 'MARKDOWN_FILE'),
 }));
 
 const handleCancel = () => emit('cancel');
 
 const handleFileChange = event => {
   const file = event.target.files[0];
-  if (file) {
+  if (!file) return;
+
+  if (state.documentType === 'pdf') {
     if (file.type !== 'application/pdf') {
       useAlert(t('CAPTAIN.DOCUMENTS.FORM.PDF_FILE.INVALID_TYPE'));
       event.target.value = '';
@@ -88,7 +98,22 @@ const handleFileChange = event => {
     }
     state.pdfFile = file;
     state.name = file.name.replace(/\.pdf$/i, '');
+    return;
   }
+
+  if (!/\.md$/i.test(file.name) || file.size > 10 * 1024) {
+    useAlert('Selecione um arquivo Markdown (.md) de até 10 KB.');
+    event.target.value = '';
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    state.markdownFile = file;
+    state.markdownContent = reader.result;
+    state.name = file.name;
+  };
+  reader.readAsText(file, 'UTF-8');
 };
 
 const openFileDialog = () => {
@@ -107,13 +132,16 @@ const prepareDocumentDetails = () => {
   if (state.documentType === 'url') {
     formData.append('document[external_link]', state.url);
     formData.append('document[name]', state.name || state.url);
-  } else {
+  } else if (state.documentType === 'pdf') {
     formData.append('document[pdf_file]', state.pdfFile);
     formData.append(
       'document[name]',
       state.name || state.pdfFile.name.replace('.pdf', '')
     );
     // No need to send external_link for PDF - it's auto-generated in the backend
+  } else {
+    formData.append('document[markdown_content]', state.markdownContent);
+    formData.append('document[name]', state.name || state.markdownFile.name);
   }
 
   return formData;
@@ -155,22 +183,25 @@ const handleSubmit = async () => {
       :message-type="formErrors.url ? 'error' : 'info'"
     />
 
-    <div v-if="state.documentType === 'pdf'" class="flex flex-col gap-2">
+    <div
+      v-if="state.documentType === 'pdf' || state.documentType === 'markdown'"
+      class="flex flex-col gap-2"
+    >
       <label class="text-sm font-medium text-n-slate-12">
-        {{ t('CAPTAIN.DOCUMENTS.FORM.PDF_FILE.LABEL') }}
+        {{ state.documentType === 'pdf' ? t('CAPTAIN.DOCUMENTS.FORM.PDF_FILE.LABEL') : 'Arquivo Markdown (.md)' }}
       </label>
       <div class="relative">
         <input
           ref="fileInputRef"
           type="file"
-          accept=".pdf"
+          :accept="state.documentType === 'pdf' ? '.pdf' : '.md,text/markdown,text/plain'"
           class="hidden"
           @change="handleFileChange"
         />
         <Button
           type="button"
-          :color="hasPdfFileError ? 'ruby' : 'slate'"
-          :variant="hasPdfFileError ? 'outline' : 'solid'"
+          :color="(state.documentType === 'pdf' ? hasPdfFileError : hasMarkdownFileError) ? 'ruby' : 'slate'"
+          :variant="(state.documentType === 'pdf' ? hasPdfFileError : hasMarkdownFileError) ? 'outline' : 'solid'"
           class="!w-full !h-auto !justify-between !py-4"
           @click="openFileDialog"
         >
@@ -179,21 +210,21 @@ const handleSubmit = async () => {
               <div
                 class="flex justify-center items-center w-10 h-10 rounded-lg bg-n-slate-3"
               >
-                <i class="text-xl i-ph-file-pdf text-n-slate-11" />
+                <i :class="['text-xl text-n-slate-11', state.documentType === 'pdf' ? 'i-ph-file-pdf' : 'i-lucide-file-text']" />
               </div>
               <div class="flex flex-col flex-1 gap-1 items-start">
                 <p class="m-0 text-sm font-medium text-n-slate-12">
                   {{
-                    state.pdfFile
-                      ? state.pdfFile.name
-                      : t('CAPTAIN.DOCUMENTS.FORM.PDF_FILE.CHOOSE_FILE')
+                    (state.documentType === 'pdf' ? state.pdfFile : state.markdownFile)
+                      ? (state.documentType === 'pdf' ? state.pdfFile.name : state.markdownFile.name)
+                      : (state.documentType === 'pdf' ? t('CAPTAIN.DOCUMENTS.FORM.PDF_FILE.CHOOSE_FILE') : 'Escolher arquivo .md')
                   }}
                 </p>
                 <p class="m-0 text-xs text-n-slate-11">
                   {{
-                    state.pdfFile
-                      ? `${(state.pdfFile.size / 1024 / 1024).toFixed(2)} MB`
-                      : t('CAPTAIN.DOCUMENTS.FORM.PDF_FILE.HELP_TEXT')
+                    (state.documentType === 'pdf' ? state.pdfFile : state.markdownFile)
+                      ? `${((state.documentType === 'pdf' ? state.pdfFile : state.markdownFile).size / 1024).toFixed(1)} KB`
+                      : (state.documentType === 'pdf' ? t('CAPTAIN.DOCUMENTS.FORM.PDF_FILE.HELP_TEXT') : 'Arquivo individual de até 10 KB')
                   }}
                 </p>
               </div>
@@ -205,6 +236,9 @@ const handleSubmit = async () => {
       </div>
       <p v-if="formErrors.pdfFile" class="text-xs text-n-ruby-9">
         {{ formErrors.pdfFile }}
+      </p>
+      <p v-if="state.documentType === 'markdown' && formErrors.markdownFile" class="text-xs text-n-ruby-9">
+        {{ formErrors.markdownFile }}
       </p>
     </div>
 
