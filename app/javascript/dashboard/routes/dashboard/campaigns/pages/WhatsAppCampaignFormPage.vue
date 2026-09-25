@@ -71,6 +71,7 @@ const state = reactive(buildState());
 const savedState = ref(buildState());
 const hydratedId = ref(null);
 const healthData = ref(null);
+const isCreatingCampaign = ref(false);
 
 const campaignId = computed(() => route.params.campaignId);
 const isEditMode = computed(() => Boolean(campaignId.value));
@@ -343,6 +344,11 @@ const handleSectionSave = async section => {
 };
 
 const handleCreate = async scheduledAt => {
+  // A failed navigation or analytics event must never turn a persisted campaign
+  // into a false "save failed" message or allow a retry to create a duplicate.
+  if (isCreatingCampaign.value || uiFlags.value.isCreating) return;
+
+  isCreatingCampaign.value = true;
   try {
     await store.dispatch('campaigns/create', {
       title: state.title,
@@ -352,15 +358,19 @@ const handleCreate = async scheduledAt => {
       trigger_rules: { delivery_settings: state.deliverySettings },
       ...templatePayload.value,
     });
-    useTrack(CAMPAIGNS_EVENTS.CREATE_CAMPAIGN, {
-      type: CAMPAIGN_TYPES.ONE_OFF,
-    });
-    useAlert(t('CAMPAIGN.WHATSAPP.FORM.API.CREATE_SUCCESS'));
-    resetForm();
-    router.push({ name: 'campaigns_whatsapp_index' });
   } catch {
     useAlert(t('CAMPAIGN.WHATSAPP.FORM.API.CREATE_ERROR'));
+    return;
+  } finally {
+    isCreatingCampaign.value = false;
   }
+
+  useTrack(CAMPAIGNS_EVENTS.CREATE_CAMPAIGN, {
+    type: CAMPAIGN_TYPES.ONE_OFF,
+  });
+  useAlert(t('CAMPAIGN.WHATSAPP.FORM.API.CREATE_SUCCESS'));
+  resetForm();
+  router.push({ name: 'campaigns_whatsapp_index' }).catch(() => {});
 };
 
 const handleSchedule = () =>

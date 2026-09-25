@@ -26,7 +26,8 @@ if resource.campaign_type == 'one_off'
       json.failed counts['failed'] || 0
       json.skipped counts['skipped'] || 0
       json.canceled counts['canceled'] || 0
-      json.next_send_at resource.campaign_recipients.scheduled.where('scheduled_at >= ?', Time.current).minimum(:scheduled_at)&.to_i
+      scheduled_status = CampaignRecipient.statuses.fetch('scheduled')
+      json.next_send_at resource.campaign_recipients.where(status: scheduled_status).where('scheduled_at >= ?', Time.current).minimum(:scheduled_at)&.to_i
     end
   end
 end
