@@ -11,6 +11,11 @@ class Campaigns::SendWhatsappCampaignRecipientJob < ApplicationJob
         recipient.update!(status: :canceled, canceled_at: Time.current)
         return
       end
+      # The campaign may have been scheduled while another campaign was still
+      # using this inbox. Recheck the hard server-side quota immediately
+      # before an outbound request to Meta.
+      return unless Whatsapp::CampaignDailyQuotaService.new(recipient: recipient).reserve_or_reschedule!
+
       recipient.update!(status: :sending)
     end
     Whatsapp::CampaignRecipientDeliveryService.new(recipient: recipient).perform

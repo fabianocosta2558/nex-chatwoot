@@ -91,13 +91,13 @@ const handleConfirm = () => {
           <select v-model.number="deliverySettings.daily_limit" class="w-full px-2 py-2 mb-3 border rounded bg-n-solid-1 border-n-slate-5 text-n-slate-12">
             <option :value="100">100 mensagens</option>
             <option :value="200">200 mensagens</option>
-            <option :value="300">300 mensagens</option>
+            <option :value="250">250 mensagens</option>
           </select>
           <div class="grid grid-cols-2 gap-2">
             <Input v-model="deliverySettings.window_start" type="time" label="Início" />
             <Input v-model="deliverySettings.window_end" type="time" label="Fim" />
           </div>
-          <p class="mt-2 text-xs text-n-slate-10">Os destinatários serão distribuídos dentro dessa janela, no horário de Brasília.</p>
+          <p class="mt-2 text-xs text-n-slate-10">O servidor distribui os destinatários nesta janela no horário de Brasília e nunca permite mais de 250 mensagens por dia.</p>
         </div>
         <div v-if="showActions" class="flex items-center justify-between gap-3">
           <Button

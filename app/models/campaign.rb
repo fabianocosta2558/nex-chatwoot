@@ -72,11 +72,11 @@ class Campaign < ApplicationRecord
   end
 
   def distributed_whatsapp_delivery?
-    whatsapp? && trigger_rules.dig('delivery_settings', 'mode') == 'distributed'
+    whatsapp? && delivery_settings['mode'] == 'distributed'
   end
 
   def delivery_settings
-    trigger_rules.fetch('delivery_settings', {})
+    (trigger_rules || {}).fetch('delivery_settings', {})
   end
 
   def cancel_delivery!
@@ -155,10 +155,37 @@ class Campaign < ApplicationRecord
     if ['Twilio SMS', 'Sms', 'Whatsapp'].include?(inbox.inbox_type)
       self.campaign_type = 'one_off'
       self.scheduled_at ||= Time.now.utc
+      normalize_whatsapp_delivery_settings if inbox.inbox_type == 'Whatsapp'
     else
       self.campaign_type = 'ongoing'
       self.scheduled_at = nil
     end
+  end
+
+  # WhatsApp campaigns are always paced. These values are normalized in the
+  # model so an API caller cannot bypass the dashboard controls.
+  def normalize_whatsapp_delivery_settings
+    rules = (trigger_rules || {}).deep_stringify_keys
+    settings = rules.fetch('delivery_settings', {})
+    requested_limit = settings['daily_limit'].to_i
+    daily_limit = [100, 200, 250].include?(requested_limit) ? requested_limit : 100
+
+    rules['delivery_settings'] = {
+      'mode' => 'distributed',
+      'daily_limit' => daily_limit,
+      'window_start' => valid_delivery_time(settings['window_start']) || '08:00',
+      'window_end' => valid_delivery_time(settings['window_end']) || '18:00',
+      # Keep all commercial scheduling in Brasília time, independent of the
+      # server or browser time zone.
+      'time_zone' => 'America/Sao_Paulo'
+    }
+    self.trigger_rules = rules
+  end
+
+  def valid_delivery_time(value)
+    return unless value.to_s.match?(/\A([01]\d|2[0-3]):[0-5]\d\z/)
+
+    value
   end
 
   def validate_url

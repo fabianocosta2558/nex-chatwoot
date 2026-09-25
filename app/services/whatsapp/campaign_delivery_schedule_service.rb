@@ -20,11 +20,11 @@ class Whatsapp::CampaignDeliveryScheduleService
 
   def daily_limit
     value = settings['daily_limit'].to_i
-    [100, 200, 300].include?(value) ? value : 100
+    [100, 200, 250].include?(value) ? value : 100
   end
 
   def time_zone
-    @time_zone ||= ActiveSupport::TimeZone[settings['time_zone'].presence || 'America/Sao_Paulo'] || Time.zone
+    @time_zone ||= ActiveSupport::TimeZone['America/Sao_Paulo']
   end
 
   def first_day
